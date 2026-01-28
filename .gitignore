@@ -1,0 +1,10 @@
+
+.env.local
+node_modules
+.next
+.next.failed*
+.vercel
+out
+.DS_Store
+*.log
+_tmp_test.txt

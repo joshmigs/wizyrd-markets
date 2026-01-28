@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+
+@layer utilities {
+  [class*="hover:bg-navy"]:hover,
+  [class*="hover:bg-navy-soft"]:hover {
+    color: #fff;
+  }
+
+  [class*="hover:bg-navy"]:hover *,
+  [class*="hover:bg-navy-soft"]:hover * {
+    color: inherit;
+  }
+}
+
+@tailwind utilities;
+
+@layer utilities {
+  [class*="hover:bg-navy"]:disabled:hover,
+  [class*="hover:bg-navy-soft"]:disabled:hover {
+    background-color: #fff;
+    border-color: rgba(11, 31, 59, 0.1);
+    color: rgba(11, 31, 59, 0.4);
+  }
+
+  [class*="hover:bg-navy"]:disabled:hover *,
+  [class*="hover:bg-navy-soft"]:disabled:hover * {
+    color: inherit;
+  }
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at 20% 12%,
+      rgba(28, 39, 56, 0.32) 0%,
+      rgba(28, 39, 56, 0) 55%
+    ),
+    radial-gradient(
+      circle at 80% 18%,
+      rgba(10, 22, 38, 0.32) 0%,
+      rgba(10, 22, 38, 0) 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(154, 161, 171, 0.98) 0%,
+      rgba(133, 142, 154, 0.98) 26%,
+      rgba(92, 103, 120, 0.98) 48%,
+      rgba(56, 70, 90, 0.98) 63%,
+      rgba(92, 103, 120, 0.98) 78%,
+      rgba(154, 161, 171, 0.98) 100%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-position: center top;
+  color: #141414;
+}
+
+::selection {
+  background: #f6c44f;
+  color: #141414;
+}

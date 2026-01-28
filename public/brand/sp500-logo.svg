@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <rect width="160" height="160" rx="32" fill="#0f172a"/>
+  <text
+    x="80"
+    y="60"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    font-family="Arial, sans-serif"
+    font-size="42"
+    font-weight="700"
+    fill="#f8fafc"
+  >S&amp;P</text>
+  <text
+    x="80"
+    y="104"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    font-family="Arial, sans-serif"
+    font-size="34"
+    font-weight="600"
+    fill="#f8fafc"
+  >500</text>
+</svg>
