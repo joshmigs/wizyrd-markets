@@ -51,7 +51,7 @@ export default function LoginForm({ redirectTo }: { redirectTo?: string }) {
         const fallbackName = user.email?.split("@")[0] ?? "Player";
         const displayName =
           (user.user_metadata?.display_name as string | undefined) ?? fallbackName;
-        await supabase.from("profiles").upsert(
+        await (supabase.from("profiles") as any).upsert(
           {
             id: user.id,
             display_name: displayName
