@@ -4,7 +4,14 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type MouseEvent
+} from "react";
 import LogoMark from "@/app/components/LogoMark";
 import TeamLogo from "@/app/components/TeamLogo";
 import SelfExclusionNotice from "@/app/components/SelfExclusionNotice";
@@ -68,7 +75,7 @@ type LeagueInvite = {
   } | null;
 };
 
-export default function LeagueHomePage() {
+function LeagueHomePageInner() {
   const searchParams = useSearchParams();
   const requestedLeagueId = searchParams.get("leagueId");
   const [session, setSession] = useState<Session | null>(null);
@@ -1100,5 +1107,13 @@ export default function LeagueHomePage() {
 
       </div>
     </main>
+  );
+}
+
+export default function LeagueHomePage() {
+  return (
+    <Suspense fallback={<div className="px-6 py-8 text-sm text-steel">Loading league…</div>}>
+      <LeagueHomePageInner />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import LogoMark from "@/app/components/LogoMark";
 import TickerNewsButton from "@/app/components/TickerNewsButton";
@@ -405,7 +405,7 @@ const extractMonthlySeries = (
   return values;
 };
 
-export default function PlaygroundPage() {
+function PlaygroundPageInner() {
   const searchParams = useSearchParams();
   const [universe, setUniverse] = useState<UniverseMember[]>([]);
   const [loadingUniverse, setLoadingUniverse] = useState(true);
@@ -3315,5 +3315,15 @@ export default function PlaygroundPage() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+export default function PlaygroundPage() {
+  return (
+    <Suspense
+      fallback={<div className="px-6 py-8 text-sm text-steel">Loading playground…</div>}
+    >
+      <PlaygroundPageInner />
+    </Suspense>
   );
 }
