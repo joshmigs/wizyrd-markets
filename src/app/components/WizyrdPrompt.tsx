@@ -131,6 +131,7 @@ export default function WizyrdPrompt({
   const saveTimeoutRef = useRef<number | null>(null);
 
   const hasMessages = messages.length > 0;
+  const showHistoryLoader = authReady && Boolean(userId) && !historyLoaded;
   const headerTone = showLabel ? "text-steel" : "text-white/70";
   const clearButtonStyle = showLabel
     ? "border-navy/20 text-navy hover:border-navy hover:bg-navy-soft hover:text-white"
@@ -587,7 +588,12 @@ export default function WizyrdPrompt({
             </button>
           </div>
         ) : null}
-        {!hasMessages ? (
+        {showHistoryLoader ? (
+          <div className="rounded-2xl border border-white/20 bg-white/80 px-4 py-3 text-sm text-ink shadow-sm shadow-navy/10">
+            <p className="text-xs text-steel">Loading your chat history...</p>
+          </div>
+        ) : null}
+        {!hasMessages && !showHistoryLoader ? (
           <div className="rounded-2xl border border-white/20 bg-white/80 px-4 py-3 text-sm text-ink shadow-sm shadow-navy/10">
             <p className="text-xs text-steel">{hintText}</p>
             <div className="mt-3 flex flex-wrap gap-2">
