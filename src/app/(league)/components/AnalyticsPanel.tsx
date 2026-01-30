@@ -267,6 +267,7 @@ function LineChart({
   secondaryLabel = "Benchmark",
   tertiaryLabel = "Comparison",
   showCompareLegend = false,
+  showSecondaryLegend = false,
   description,
   title,
   subtitle,
@@ -283,6 +284,7 @@ function LineChart({
   secondaryLabel?: string;
   tertiaryLabel?: string;
   showCompareLegend?: boolean;
+  showSecondaryLegend?: boolean;
   description?: string;
   title: string;
   subtitle: string;
@@ -570,6 +572,12 @@ function LineChart({
             <span className="h-2 w-2 rounded-full bg-[#f59e0b]" />
             {tertiaryLabel}
           </span>
+          {showSecondaryLegend ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-0.5 w-6 border-t-2 border-dotted border-slate-400" />
+              {secondaryLabel}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {description ? (
@@ -1343,6 +1351,7 @@ export default function AnalyticsPanel({
               secondaryLabel="S&P 500"
               tertiaryLabel={compareLineLabel}
               showCompareLegend={showCompareLegend}
+              showSecondaryLegend={showCompareLegend}
               title="Cumulative return"
               subtitle={cumulativeSubtitle}
               description="Shows compounded performance over the selected weeks. Rising lines indicate growth; dips indicate drawdowns."
