@@ -68,6 +68,31 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
     });
   }, []);
 
+  const loadLeagues = useCallback(async () => {
+    if (!session?.access_token) {
+      return;
+    }
+    setError(null);
+    try {
+      const response = await fetch("/api/league/list", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(result.error ?? "Unable to load leagues.");
+        setLeagues([]);
+        return;
+      }
+      const nextLeagues = (result.leagues ?? []) as League[];
+      setLeagues(nextLeagues);
+    } catch (_error) {
+      setError("Unable to load leagues.");
+      setLeagues([]);
+    }
+  }, [session?.access_token]);
+
   const resetState = useCallback(() => {
     setOpen(false);
     setLeagues([]);
@@ -145,6 +170,22 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
     if (typeof window === "undefined") {
       return;
     }
+    const handleLeagueJoined = () => {
+      if (!session?.access_token) {
+        return;
+      }
+      loadLeagues();
+    };
+    window.addEventListener("league:joined", handleLeagueJoined);
+    return () => {
+      window.removeEventListener("league:joined", handleLeagueJoined);
+    };
+  }, [loadLeagues, session?.access_token]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
     if (open) {
       window.dispatchEvent(new CustomEvent("news:close"));
       window.dispatchEvent(new CustomEvent("wizyrd:close"));
@@ -187,31 +228,6 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
       document.removeEventListener("mousedown", handlePointerDown);
     };
   }, [open]);
-
-  const loadLeagues = useCallback(async () => {
-    if (!session?.access_token) {
-      return;
-    }
-    setError(null);
-    try {
-      const response = await fetch("/api/league/list", {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`
-        }
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(result.error ?? "Unable to load leagues.");
-        setLeagues([]);
-        return;
-      }
-      const nextLeagues = (result.leagues ?? []) as League[];
-      setLeagues(nextLeagues);
-    } catch (_error) {
-      setError("Unable to load leagues.");
-      setLeagues([]);
-    }
-  }, [session?.access_token, selectedLeagueId]);
 
   const loadMembers = useCallback(
     async (leagueId: string) => {
@@ -332,7 +348,11 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
         }
         return message.sender_id === selectedUserId;
       }).length;
-      if (unreadInThread > 0) {
+      const threadUnreadCount = isLeagueThread
+        ? leagueUnreadCount
+        : unreadByMember[selectedUserId] ?? 0;
+      const markCount = Math.max(unreadInThread, threadUnreadCount);
+      if (markCount > 0) {
         const readAt = new Date().toISOString();
         await fetch("/api/messages", {
           method: "PATCH",
@@ -353,7 +373,12 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
               : message
           )
         );
-        setUnreadCount((current) => Math.max(0, current - unreadInThread));
+        setUnreadCount((current) => Math.max(0, current - markCount));
+        if (isLeagueThread) {
+          setLeagueUnreadCount(0);
+        } else {
+          setUnreadByMember((current) => ({ ...current, [selectedUserId]: 0 }));
+        }
       }
     } catch (_error) {
       setMessages([]);
@@ -361,7 +386,14 @@ export default function MessengerDock({ inline = false, className }: MessengerDo
     } finally {
       setMessagesLoading(false);
     }
-  }, [session?.access_token, selectedLeagueId, selectedUserId, session?.user?.id]);
+  }, [
+    session?.access_token,
+    selectedLeagueId,
+    selectedUserId,
+    session?.user?.id,
+    unreadByMember,
+    leagueUnreadCount
+  ]);
 
   const loadUnreadCount = useCallback(async () => {
     if (!session?.access_token) {

@@ -98,9 +98,11 @@ function LeagueHomePageInner() {
   const [deleteMessages, setDeleteMessages] = useState<Record<string, string | null>>({});
   const [leaveLoading, setLeaveLoading] = useState<Record<string, boolean>>({});
   const [leaveMessages, setLeaveMessages] = useState<Record<string, string | null>>({});
+  const [knownUsernames, setKnownUsernames] = useState<string[]>([]);
   const [memberActionMessage, setMemberActionMessage] = useState<string | null>(null);
   const [memberActionLoading, setMemberActionLoading] = useState<Record<string, boolean>>({});
   const [pendingInvites, setPendingInvites] = useState<LeagueInvite[]>([]);
+  const [expandedLeagues, setExpandedLeagues] = useState<Record<string, boolean>>({});
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [inviteActionLoading, setInviteActionLoading] = useState<Record<string, boolean>>(
     {}
@@ -166,7 +168,7 @@ function LeagueHomePageInner() {
     if (!emails.trim()) {
       setInviteMessages((current) => ({
         ...current,
-        [leagueId]: "Enter one or more email addresses."
+        [leagueId]: "Enter one or more emails or usernames."
       }));
       return;
     }
@@ -196,10 +198,15 @@ function LeagueHomePageInner() {
 
     setInviteEmails((current) => ({ ...current, [leagueId]: "" }));
     const sentCount = Number(result.sent ?? 0);
+    const missing = Array.isArray(result.notFound) ? result.notFound : [];
+    const baseMessage =
+      sentCount === 1 ? "Invite sent." : `Invites sent (${sentCount}).`;
+    const suffix = missing.length
+      ? ` Unable to find: ${missing.join(", ")}.`
+      : "";
     setInviteMessages((current) => ({
       ...current,
-      [leagueId]:
-        sentCount === 1 ? "Invite sent." : `Invites sent (${sentCount}).`
+      [leagueId]: `${baseMessage}${suffix}`
     }));
   };
 
@@ -553,6 +560,39 @@ function LeagueHomePageInner() {
   }, [session?.access_token]);
 
   useEffect(() => {
+    if (!session?.access_token) {
+      setKnownUsernames([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadKnown = async () => {
+      try {
+        const response = await fetch("/api/league/known-usernames", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          },
+          signal: controller.signal
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          return;
+        }
+        const names = Array.isArray(result.usernames) ? result.usernames : [];
+        setKnownUsernames(names);
+      } catch (_error) {
+        // ignore
+      }
+    };
+
+    loadKnown();
+
+    return () => {
+      controller.abort();
+    };
+  }, [session?.access_token]);
+
+  useEffect(() => {
     if (!session?.access_token || leagues.length === 0) {
       setStandings({});
       setStandingsLeagueId("all");
@@ -611,17 +651,78 @@ function LeagueHomePageInner() {
     : null;
   const leaguesForCards = focusedLeague ? [focusedLeague] : isLeagueFocused ? [] : leagues;
 
-  const renderLeagueCard = (league: League) => (
-    <div
-      key={league.id}
-      id={`league-${league.id}`}
-      className="rounded-2xl border border-amber-100 bg-white p-4"
-    >
-      <h3 className="font-display text-xl text-ink">{league.name}</h3>
-      <p className="mt-2 text-sm text-steel">
-        Invite code:{" "}
-        <span className="font-semibold text-navy">{league.invite_code}</span>
-      </p>
+  const renderLeagueCard = (league: League) => {
+    const isExpanded =
+      expandedLeagues[league.id] ?? (focusedLeague?.id === league.id);
+    const toggleExpanded = () => {
+      setExpandedLeagues((current) => ({
+        ...current,
+        [league.id]: !isExpanded
+      }));
+    };
+    const now = Date.now();
+    const lockTime = league.current_week?.lock_time
+      ? new Date(league.current_week.lock_time).getTime()
+      : null;
+    const hasCurrentWeek = Boolean(league.current_week);
+    const hasNextWeek = !hasCurrentWeek && Boolean(league.next_week);
+    const lineupSet = hasCurrentWeek
+      ? Boolean(league.current_lineup_set)
+      : hasNextWeek
+        ? Boolean(league.lineup_set)
+        : false;
+    const lineupLabel = hasCurrentWeek
+      ? lineupSet
+        ? "Lineup set (current week)"
+        : "Lineup not set (current week)"
+      : hasNextWeek
+        ? lineupSet
+          ? "Lineup set (next week)"
+          : "Lineup not set (next week)"
+        : "Lineup not scheduled";
+    const isLocked = lockTime ? lockTime <= now : false;
+
+    return (
+      <div
+        key={league.id}
+        id={`league-${league.id}`}
+        className="rounded-2xl border border-amber-100 bg-white p-4"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-display text-xl text-ink">{league.name}</h3>
+            <p className="mt-2 text-sm text-steel">
+              Invite code:{" "}
+              <span className="font-semibold text-navy">{league.invite_code}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            aria-expanded={isExpanded}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-navy/20 bg-white text-base font-semibold text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white"
+          >
+            {isExpanded ? "−" : "+"}
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-steel">
+          <span
+            className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+              lineupSet
+                ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
+                : "border border-red-200 bg-red-100 text-red-700"
+            }`}
+            aria-hidden
+          >
+            {lineupSet ? "✓" : "×"}
+          </span>
+          <span>{lineupLabel}</span>
+          {hasCurrentWeek ? (
+            <span className={isLocked ? "text-red-700" : "text-emerald-700"}>
+              {isLocked ? "Locked" : "Open"}
+            </span>
+          ) : null}
+        </div>
       {league.is_creator ? (
         <form
           className="mt-3 space-y-3"
@@ -639,8 +740,9 @@ function LeagueHomePageInner() {
                 className="w-full rounded-xl border border-amber-100 bg-white px-4 py-3 text-sm md:w-72"
                 id={`invite-${league.id}`}
                 type="text"
-                placeholder="Emails separated by commas"
+                placeholder="Emails or usernames, separated by commas"
                 value={inviteEmails[league.id] ?? ""}
+                list="league-usernames"
                 onChange={(event) =>
                   setInviteEmails((current) => ({
                     ...current,
@@ -665,7 +767,7 @@ function LeagueHomePageInner() {
           </p>
         </form>
       ) : null}
-      {league.is_creator ? (
+      {league.is_creator && isExpanded ? (
         <div className="mt-4 rounded-2xl border border-amber-100 bg-paper px-4 py-3 text-sm text-steel">
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-steel">
             <span>League status</span>
@@ -691,7 +793,7 @@ function LeagueHomePageInner() {
           </div>
         </div>
       ) : null}
-      {league.is_creator ? (
+      {league.is_creator && isExpanded ? (
         <div className="mt-4 space-y-2">
           <button
             type="button"
@@ -706,7 +808,7 @@ function LeagueHomePageInner() {
           ) : null}
         </div>
       ) : null}
-      {!league.is_creator ? (
+      {!league.is_creator && isExpanded ? (
         <div className="mt-4 space-y-2">
           <button
             type="button"
@@ -721,39 +823,38 @@ function LeagueHomePageInner() {
           ) : null}
         </div>
       ) : null}
-      <p className="mt-4 text-sm text-steel">
-        {(() => {
-          const now = Date.now();
-          if (league.current_week) {
-            const lockTime = league.current_week.lock_time
-              ? new Date(league.current_week.lock_time).getTime()
-              : null;
-            const canEdit = lockTime ? lockTime > now : false;
-            if (league.current_lineup_set) {
+      {isExpanded ? (
+        <p className="mt-4 text-sm text-steel">
+          {(() => {
+            if (league.current_week) {
+              const canEdit = lockTime ? lockTime > now : false;
+              if (league.current_lineup_set) {
+                return canEdit
+                  ? `Your lineup is set for this week. You can update it until ${formatLockTime(
+                      league.current_week.lock_time
+                    )}.`
+                  : "Your lineup is set for this week.";
+              }
               return canEdit
-                ? `Your lineup is set for this week. You can update it until ${formatLockTime(
+                ? `Set your lineup for this week. You can update it until ${formatLockTime(
                     league.current_week.lock_time
                   )}.`
-                : "Your lineup is set for this week.";
+                : "This week is locked. No lineup submitted.";
             }
-            return canEdit
-              ? `Set your lineup for this week. You can update it until ${formatLockTime(
-                  league.current_week.lock_time
-                )}.`
-              : "This week is locked. No lineup submitted.";
-          }
-          if (league.next_week) {
-            return league.lineup_set
-              ? `Your lineup is set for the upcoming week. You can update it until ${formatLockTime(
-                  league.next_week.lock_time
-                )}.`
-              : "Set your lineup for the upcoming week.";
-          }
-          return "Season complete. Next week hasn’t been scheduled yet.";
-        })()}
-      </p>
+            if (league.next_week) {
+              return league.lineup_set
+                ? `Your lineup is set for the upcoming week. You can update it until ${formatLockTime(
+                    league.next_week.lock_time
+                  )}.`
+                : "Set your lineup for the upcoming week.";
+            }
+            return "Season complete. Next week hasn’t been scheduled yet.";
+          })()}
+        </p>
+      ) : null}
     </div>
-  );
+    );
+  };
 
   if (loadingSession) {
     return (
@@ -1103,9 +1204,21 @@ function LeagueHomePageInner() {
           ) : null}
         </section>
 
-        <AnalyticsPanel accessToken={session.access_token} leagues={leagues} />
+        <AnalyticsPanel
+          accessToken={session.access_token}
+          leagues={leagues}
+          selectedLeagueId={standingsLeagueId}
+          onLeagueChange={setStandingsLeagueId}
+        />
 
       </div>
+      {knownUsernames.length ? (
+        <datalist id="league-usernames">
+          {knownUsernames.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      ) : null}
     </main>
   );
 }

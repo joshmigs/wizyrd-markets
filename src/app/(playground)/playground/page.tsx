@@ -440,6 +440,7 @@ function PlaygroundPageInner() {
   const snapshotListRef = useRef<HTMLDivElement | null>(null);
   const monthlyListRef = useRef<HTMLDivElement | null>(null);
   const screenerListRef = useRef<HTMLDivElement | null>(null);
+  const screenerInputRef = useRef<HTMLInputElement | null>(null);
   const snapshotScrollTopRef = useRef(0);
   const monthlyScrollTopRef = useRef(0);
   const screenerScrollTopRef = useRef(0);
@@ -715,7 +716,8 @@ function PlaygroundPageInner() {
   }, [industryOptions]);
 
   const filteredStocks = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const baseQuery = screenerTicker || query;
+    const normalizedQuery = baseQuery.split(" · ")[0].trim().toLowerCase();
     const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
     return universe.filter((stock) => {
       const matchesQuery =
@@ -739,7 +741,7 @@ function PlaygroundPageInner() {
         (stock.industry && selectedIndustries.includes(stock.industry));
       return matchesQuery && matchesSector && matchesIndustry;
     });
-  }, [universe, query, selectedSectors, selectedIndustries]);
+  }, [universe, query, screenerTicker, selectedSectors, selectedIndustries]);
 
   useEffect(() => {
     if (!showScreenerSection || metricsLoadingRef.current || !filteredStocks.length) {
@@ -1916,8 +1918,16 @@ function PlaygroundPageInner() {
         {showTrackRecord ? (
           <section
             id="track-record"
-            className="rounded-2xl border border-amber-100 bg-paper p-6"
+            className="relative rounded-2xl border border-amber-100 bg-paper p-6 pr-24 sm:pr-32 lg:pr-40"
           >
+          {monthlyTicker ? (
+            <a
+              href={`?view=snapshot&ticker=${encodeURIComponent(monthlyTicker)}#company-snapshot`}
+              className="absolute right-6 top-6 inline-flex"
+            >
+              <CompanyLogo ticker={monthlyTicker} size={104} />
+            </a>
+          ) : null}
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="font-display text-2xl text-ink">Monthly Track Record</h2>
@@ -1932,51 +1942,43 @@ function PlaygroundPageInner() {
               </p>
             </div>
             {monthlyTicker ? (
-              <div className="flex flex-col items-start gap-2 lg:items-end">
-                <a
-                  href={`?view=snapshot&ticker=${encodeURIComponent(monthlyTicker)}#company-snapshot`}
-                  className="inline-flex"
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!monthlyTicker) {
+                      return;
+                    }
+                    setWatchlist(
+                      toggleWatchlistItem({
+                        ticker: monthlyTicker,
+                        company_name: monthlyStock?.company_name ?? null,
+                        sector: monthlyStock?.sector ?? null,
+                        industry: monthlyStock?.industry ?? null
+                      })
+                    );
+                  }}
+                  className="rounded-full border border-navy/20 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white"
                 >
-                  <CompanyLogo ticker={monthlyTicker} size={46} />
-                </a>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!monthlyTicker) {
-                        return;
-                      }
-                      setWatchlist(
-                        toggleWatchlistItem({
-                          ticker: monthlyTicker,
-                          company_name: monthlyStock?.company_name ?? null,
-                          sector: monthlyStock?.sector ?? null,
-                          industry: monthlyStock?.industry ?? null
-                        })
-                      );
-                    }}
-                    className="rounded-full border border-navy/20 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white"
-                  >
-                    {monthlyInWatchlist ? "In watchlist" : "Add to watchlist"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!monthlyTicker || monthlyInOverlay}
-                    onClick={() => {
-                      if (!monthlyTicker || monthlyInOverlay) {
-                        return;
-                      }
-                      applySelectionUpdate((current) =>
-                        current.includes(monthlyTicker)
-                          ? current
-                          : [...current, monthlyTicker]
-                      );
-                    }}
-                    className="rounded-full border border-navy/20 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white disabled:cursor-not-allowed disabled:border-navy/10 disabled:text-navy/40"
-                  >
-                    {monthlyInOverlay ? "In overlay" : "Add to overlay"}
-                  </button>
-                </div>
+                  {monthlyInWatchlist ? "In watchlist" : "Add to watchlist"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!monthlyTicker || monthlyInOverlay}
+                  onClick={() => {
+                    if (!monthlyTicker || monthlyInOverlay) {
+                      return;
+                    }
+                    applySelectionUpdate((current) =>
+                      current.includes(monthlyTicker)
+                        ? current
+                        : [...current, monthlyTicker]
+                    );
+                  }}
+                  className="rounded-full border border-navy/20 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white disabled:cursor-not-allowed disabled:border-navy/10 disabled:text-navy/40"
+                >
+                  {monthlyInOverlay ? "IN OVERLAY CHART" : "ADD TO OVERLAY CHART"}
+                </button>
               </div>
             ) : null}
             <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-end">
@@ -2879,7 +2881,7 @@ function PlaygroundPageInner() {
                     }}
                     className="rounded-full border border-navy/20 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-navy shadow-sm shadow-navy/10 transition hover:border-navy hover:bg-navy-soft hover:text-white disabled:cursor-not-allowed disabled:border-navy/10 disabled:text-navy/40"
                   >
-                    {activeInOverlay ? "In overlay" : "Add to overlay"}
+                    {activeInOverlay ? "IN OVERLAY CHART" : "ADD TO OVERLAY CHART"}
                   </button>
                 </div>
               </div>
@@ -3084,6 +3086,7 @@ function PlaygroundPageInner() {
             <label className="relative text-sm font-semibold text-ink md:col-span-2">
               Search
               <input
+                ref={screenerInputRef}
                 className="mt-2 w-full rounded-xl border border-amber-100 bg-white px-4 py-3 text-sm"
                 placeholder="Search ticker or company name"
                 value={query}
@@ -3118,7 +3121,9 @@ function PlaygroundPageInner() {
                       data-ticker={option.ticker}
                       type="button"
                       className="flex w-full items-center justify-between px-4 py-2 text-left hover:bg-amber-50"
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         if (screenerListRef.current) {
                           screenerScrollTopRef.current =
                             screenerListRef.current.scrollTop;
@@ -3128,6 +3133,10 @@ function PlaygroundPageInner() {
                         );
                         setScreenerTicker(option.ticker);
                         setScreenerFocus(false);
+                        requestAnimationFrame(() => {
+                          setScreenerFocus(false);
+                          screenerInputRef.current?.blur();
+                        });
                       }}
                     >
                       <span className="flex items-center gap-2">

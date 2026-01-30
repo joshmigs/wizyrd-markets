@@ -465,6 +465,34 @@ const detectSector = (normalized: string) => {
   return null;
 };
 
+const SUBSECTOR_STOP_WORDS = [
+  "stocks",
+  "stock",
+  "companies",
+  "company",
+  "names",
+  "tickers",
+  "ticker",
+  "universe",
+  "s&p 500",
+  "sp 500",
+  "sp500",
+  "s and p 500"
+];
+
+const extractSubsectorQuery = (normalized: string) => {
+  const match = normalized.match(/\b(?:in|within|for|about|around|focused on)\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+  let phrase = match[1];
+  SUBSECTOR_STOP_WORDS.forEach((word) => {
+    phrase = phrase.replace(new RegExp(`\\b${word}\\b`, "g"), "");
+  });
+  const cleaned = phrase.trim();
+  return cleaned.length >= 3 ? cleaned : null;
+};
+
 const TICKER_ALIASES: Array<{ alias: string; ticker: string }> = [
   { alias: "google", ticker: "GOOG" },
   { alias: "alphabet", ticker: "GOOG" },
@@ -2403,6 +2431,7 @@ export async function POST(request: Request) {
   const limit = parseLimit(normalized);
   const promptTokens = normalized.split(" ").filter(Boolean);
   const sector = detectSector(normalized);
+  const subsectorQuery = !sector ? extractSubsectorQuery(normalized) : null;
   const metric = detectMetric(normalized);
   const baseReturnRequest = parseReturnRequest(normalized);
   const returnRequest =
@@ -3138,6 +3167,42 @@ export async function POST(request: Request) {
       reply:
         "Ask for a sector or style. Try tech stocks, low volatility, high beta, value stocks, or large cap picks.",
       suggestions: []
+    });
+  }
+
+  if (!sector && subsectorQuery && listIntent) {
+    const normalizedSubsector = normalizeText(subsectorQuery);
+    const subsectorTokens = normalizedSubsector.split(" ").filter(Boolean);
+    const subsectorMatches = list
+      .filter((member) => member.ticker !== DEFAULT_BENCHMARK_TICKER)
+      .filter((member) => {
+        const industry = normalizeText(member.industry ?? "");
+        const sectorName = normalizeText(member.sector ?? "");
+        const company = normalizeText(member.company_name ?? "");
+        const haystack = `${industry} ${sectorName} ${company}`.trim();
+        return subsectorTokens.every((token) => haystack.includes(token));
+      });
+
+    if (!subsectorMatches.length) {
+      return respond({
+        reply:
+          `I don’t have a subsector match for "${subsectorQuery}". ` +
+          "Try a broader sector (e.g., Industrials, Materials, Technology) or a specific ticker.",
+        suggestions: []
+      });
+    }
+
+    const suggestions: WizyrdSuggestion[] = subsectorMatches
+      .slice(0, limit)
+      .map((member) => ({
+        ticker: member.ticker,
+        name: member.company_name ?? null,
+        sector: member.sector ?? null
+      }));
+
+    return respond({
+      reply: `Here are ${suggestions.length} ${subsectorQuery} stocks to explore.`,
+      suggestions
     });
   }
 

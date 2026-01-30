@@ -51,6 +51,9 @@ export default function JoinLeagueForm() {
       return;
     }
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("league:joined"));
+    }
     router.push("/league");
   };
 

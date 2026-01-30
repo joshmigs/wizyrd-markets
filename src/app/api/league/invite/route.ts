@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { resolveUserIdByIdentifier } from "@/lib/supabase/admin";
 
-const parseEmails = (raw: string) => {
+const parseIdentifiers = (raw: string) => {
   return Array.from(
     new Set(
       raw
         .split(/[,;\n\s]+/)
-        .map((email) => email.trim().toLowerCase())
+        .map((entry) => entry.trim())
         .filter(Boolean)
     )
   );
@@ -34,9 +35,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "League is required." }, { status: 400 });
   }
 
-  const list = parseEmails(emails ?? "");
-  if (list.length === 0) {
-    return NextResponse.json({ error: "Provide at least one email address." }, { status: 400 });
+  const identifiers = parseIdentifiers(emails ?? "");
+  if (identifiers.length === 0) {
+    return NextResponse.json(
+      { error: "Provide at least one email or username." },
+      { status: 400 }
+    );
   }
 
   const supabase = createSupabaseServiceClient();
@@ -63,6 +67,45 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Email sending not configured. Set RESEND_API_KEY." },
       { status: 412 }
+    );
+  }
+
+  const resolvedEmails: string[] = [];
+  const notFound: string[] = [];
+
+  for (const identifier of identifiers) {
+    if (identifier.includes("@")) {
+      resolvedEmails.push(identifier.toLowerCase());
+      continue;
+    }
+    const { userId } = await resolveUserIdByIdentifier(supabase, identifier);
+    if (!userId) {
+      notFound.push(identifier);
+      continue;
+    }
+    try {
+      const { data: userData } = await supabase.auth.admin.getUserById(userId);
+      const email = userData?.user?.email?.toLowerCase() ?? null;
+      if (email) {
+        resolvedEmails.push(email);
+      } else {
+        notFound.push(identifier);
+      }
+    } catch (_error) {
+      notFound.push(identifier);
+    }
+  }
+
+  const list = Array.from(new Set(resolvedEmails));
+  if (list.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          notFound.length > 0
+            ? `No users found for: ${notFound.join(", ")}.`
+            : "Provide at least one email or username."
+      },
+      { status: 400 }
     );
   }
 
@@ -123,5 +166,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ sent: list.length });
+  return NextResponse.json({ sent: list.length, notFound });
 }

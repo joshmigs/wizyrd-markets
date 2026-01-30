@@ -845,13 +845,17 @@ function BarChart({
 
 export default function AnalyticsPanel({
   accessToken,
-  leagues
+  leagues,
+  selectedLeagueId,
+  onLeagueChange
 }: {
   accessToken: string;
   leagues: League[];
+  selectedLeagueId?: string;
+  onLeagueChange?: (leagueId: string) => void;
 }) {
   const [authToken, setAuthToken] = useState<string>(accessToken);
-  const [leagueId, setLeagueId] = useState<string>("all");
+  const [leagueId, setLeagueId] = useState<string>(selectedLeagueId ?? "all");
   const [range, setRange] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -914,13 +918,14 @@ export default function AnalyticsPanel({
   }, [accessToken]);
 
   useEffect(() => {
-    if (leagueId !== "all") {
+    if (selectedLeagueId && selectedLeagueId !== leagueId) {
+      setLeagueId(selectedLeagueId);
       return;
     }
-    if (leagues.length > 0) {
+    if (!selectedLeagueId && leagueId === "all" && leagues.length > 0) {
       setLeagueId(leagues[0].id);
     }
-  }, [leagueId, leagues]);
+  }, [selectedLeagueId, leagueId, leagues]);
 
   useEffect(() => {
     if (effectiveLeagueId === "all") {
@@ -1158,9 +1163,14 @@ export default function AnalyticsPanel({
           <select
             className="rounded-full border border-amber-100 bg-white px-4 py-2 text-sm"
             value={leagueId}
-            onChange={(event) => setLeagueId(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setLeagueId(value);
+              if (value !== "all") {
+                onLeagueChange?.(value);
+              }
+            }}
           >
-            <option value="all">All leagues</option>
             {leagues.map((league) => (
               <option key={league.id} value={league.id}>
                 {league.name}

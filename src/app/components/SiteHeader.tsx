@@ -40,7 +40,7 @@ const PLAYGROUND_ITEMS = [
 
 const MATCHUP_ITEMS = [
   { href: "/matchup#matchup-live", label: "Live matchup" },
-  { href: "/matchup#matchup-history", label: "Past weeks" }
+  { href: "/matchup#matchup-history", label: "Past matchups" }
 ];
 
 const LINEUP_ITEMS = [
