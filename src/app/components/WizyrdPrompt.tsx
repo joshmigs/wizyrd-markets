@@ -117,6 +117,8 @@ export default function WizyrdPrompt({
   const [userId, setUserId] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authEvent, setAuthEvent] = useState<string | null>(null);
+  const [signedOut, setSignedOut] = useState<boolean | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
   const [remoteUpdatedAt, setRemoteUpdatedAt] = useState<string | null>(null);
@@ -165,6 +167,8 @@ export default function WizyrdPrompt({
         }
         setUserId(data.session?.user.id ?? null);
         setAccessToken(data.session?.access_token ?? null);
+        setAuthEvent("INITIAL_SESSION");
+        setSignedOut(data.session ? false : true);
         setAuthReady(true);
       })
       .catch(() => {
@@ -173,12 +177,25 @@ export default function WizyrdPrompt({
         }
         setUserId(null);
         setAccessToken(null);
+        setAuthEvent("INITIAL_SESSION");
+        setSignedOut(true);
         setAuthReady(true);
       });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      setAuthEvent(event);
       setUserId(session?.user.id ?? null);
       setAccessToken(session?.access_token ?? null);
+      if (event === "SIGNED_OUT") {
+        setSignedOut(true);
+      } else if (
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "USER_UPDATED" ||
+        event === "INITIAL_SESSION"
+      ) {
+        setSignedOut(session ? false : true);
+      }
     });
 
     return () => {
@@ -195,6 +212,9 @@ export default function WizyrdPrompt({
       return;
     }
     if (!userId) {
+      if (!signedOut) {
+        return;
+      }
       setMessages([]);
       setPendingIntent(null);
       setAccessToken(null);
@@ -282,7 +302,7 @@ export default function WizyrdPrompt({
     };
 
     loadRemoteHistory();
-  }, [authReady, userId, accessToken]);
+  }, [authReady, userId, accessToken, signedOut, authEvent]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
