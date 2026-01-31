@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 const ALPHA_VANTAGE_BASE = "https://www.alphavantage.co/query";
+const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
 const WEBSITE_TTL_MS = 1000 * 60 * 60 * 24;
 
 const globalCache = globalThis as typeof globalThis & {
@@ -20,6 +21,32 @@ const normalizeWebsite = (value: unknown) => {
   return trimmed.length ? trimmed : null;
 };
 
+const fetchWebsiteFromWikidata = async (ticker: string) => {
+  const query = `
+    SELECT ?website WHERE {
+      ?company wdt:P249 "${ticker}" .
+      ?company wdt:P856 ?website .
+    }
+    LIMIT 1
+  `;
+  const url = new URL(WIKIDATA_ENDPOINT);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("query", query);
+  const response = await fetch(url.toString(), {
+    headers: {
+      accept: "application/sparql-results+json"
+    }
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as {
+    results?: { bindings?: Array<{ website?: { value?: string } }> };
+  };
+  const value = data?.results?.bindings?.[0]?.website?.value;
+  return normalizeWebsite(value);
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const ticker = (searchParams.get("ticker") ?? "").trim().toUpperCase();
@@ -33,28 +60,33 @@ export async function GET(request: Request) {
     return NextResponse.json({ ticker, website: cached.website });
   }
 
+  let website: string | null = null;
+
   const apiKey = process.env.MARKET_DATA_API_KEY;
-  if (!apiKey) {
-    websiteCache.set(ticker, { website: null, updatedAt: Date.now() });
-    return NextResponse.json({ ticker, website: null });
+  if (apiKey) {
+    try {
+      const url = new URL(ALPHA_VANTAGE_BASE);
+      url.searchParams.set("function", "OVERVIEW");
+      url.searchParams.set("symbol", ticker);
+      url.searchParams.set("apikey", apiKey);
+      const response = await fetch(url.toString());
+      if (response.ok) {
+        const data = (await response.json()) as Record<string, unknown>;
+        website = normalizeWebsite(data?.Website);
+      }
+    } catch {
+      // Ignore and fall back to Wikidata.
+    }
   }
 
-  try {
-    const url = new URL(ALPHA_VANTAGE_BASE);
-    url.searchParams.set("function", "OVERVIEW");
-    url.searchParams.set("symbol", ticker);
-    url.searchParams.set("apikey", apiKey);
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      websiteCache.set(ticker, { website: null, updatedAt: Date.now() });
-      return NextResponse.json({ ticker, website: null });
+  if (!website) {
+    try {
+      website = await fetchWebsiteFromWikidata(ticker);
+    } catch {
+      website = null;
     }
-    const data = (await response.json()) as Record<string, unknown>;
-    const website = normalizeWebsite(data?.Website);
-    websiteCache.set(ticker, { website, updatedAt: Date.now() });
-    return NextResponse.json({ ticker, website });
-  } catch {
-    websiteCache.set(ticker, { website: null, updatedAt: Date.now() });
-    return NextResponse.json({ ticker, website: null });
   }
+
+  websiteCache.set(ticker, { website, updatedAt: Date.now() });
+  return NextResponse.json({ ticker, website });
 }
