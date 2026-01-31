@@ -1004,15 +1004,26 @@ function PlaygroundPageInner() {
     }
   };
 
-  const handleLogoClick = async (ticker: string) => {
-    if (!ticker) {
+  const handleLogoClick = (ticker: string) => {
+    if (!ticker || typeof window === "undefined") {
       return;
     }
-    const url = await resolveWebsiteForTicker(ticker, true);
-    if (!url || typeof window === "undefined") {
+    const existing = normalizeWebsite(websiteByTicker[ticker] ?? null);
+    if (existing) {
+      window.open(existing, "_blank", "noopener,noreferrer");
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+    if (!popup) {
+      return;
+    }
+    void resolveWebsiteForTicker(ticker, true).then((url) => {
+      if (url) {
+        popup.location.href = url;
+      } else {
+        popup.close();
+      }
+    });
   };
   const activeInWatchlist = activeTicker
     ? watchlist.some((item) => item.ticker === activeTicker)
