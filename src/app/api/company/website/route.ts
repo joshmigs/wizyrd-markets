@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 const ALPHA_VANTAGE_BASE = "https://www.alphavantage.co/query";
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
+const YAHOO_PROFILE_ENDPOINT =
+  "https://query1.finance.yahoo.com/v10/finance/quoteSummary";
 const WEBSITE_TTL_MS = 1000 * 60 * 60 * 24;
 
 const globalCache = globalThis as typeof globalThis & {
@@ -21,6 +23,8 @@ const normalizeWebsite = (value: unknown) => {
   return trimmed.length ? trimmed : null;
 };
 
+const USER_AGENT = "WizyrdMarkets/1.0 (website lookup)";
+
 const fetchWebsiteFromWikidata = async (ticker: string) => {
   const query = `
     SELECT ?website WHERE {
@@ -34,7 +38,8 @@ const fetchWebsiteFromWikidata = async (ticker: string) => {
   url.searchParams.set("query", query);
   const response = await fetch(url.toString(), {
     headers: {
-      accept: "application/sparql-results+json"
+      accept: "application/sparql-results+json",
+      "user-agent": USER_AGENT
     }
   });
   if (!response.ok) {
@@ -44,6 +49,28 @@ const fetchWebsiteFromWikidata = async (ticker: string) => {
     results?: { bindings?: Array<{ website?: { value?: string } }> };
   };
   const value = data?.results?.bindings?.[0]?.website?.value;
+  return normalizeWebsite(value);
+};
+
+const fetchWebsiteFromYahoo = async (ticker: string) => {
+  const url = new URL(`${YAHOO_PROFILE_ENDPOINT}/${ticker}`);
+  url.searchParams.set("modules", "assetProfile");
+  const response = await fetch(url.toString(), {
+    headers: {
+      accept: "application/json,text/plain,*/*",
+      "user-agent": USER_AGENT
+    },
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as {
+    quoteSummary?: {
+      result?: Array<{ assetProfile?: { website?: string } }>;
+    };
+  };
+  const value = data?.quoteSummary?.result?.[0]?.assetProfile?.website;
   return normalizeWebsite(value);
 };
 
@@ -72,7 +99,9 @@ export async function GET(request: Request) {
       const response = await fetch(url.toString());
       if (response.ok) {
         const data = (await response.json()) as Record<string, unknown>;
-        website = normalizeWebsite(data?.Website);
+        if (!data?.Note && !data?.["Error Message"]) {
+          website = normalizeWebsite(data?.Website);
+        }
       }
     } catch {
       // Ignore and fall back to Wikidata.
@@ -82,6 +111,14 @@ export async function GET(request: Request) {
   if (!website) {
     try {
       website = await fetchWebsiteFromWikidata(ticker);
+    } catch {
+      website = null;
+    }
+  }
+
+  if (!website) {
+    try {
+      website = await fetchWebsiteFromYahoo(ticker);
     } catch {
       website = null;
     }
