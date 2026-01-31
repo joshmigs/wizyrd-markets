@@ -52,9 +52,14 @@ type WizyrdSuggestion = {
 type ReturnRequest = {
   horizonYears: number | null;
   annualized: boolean;
-  period: "month" | "mtd" | "qtd" | "ytd" | null;
+  period: "month" | "mtd" | "qtd" | "ytd" | "year" | null;
   month: number | null;
   year: number | null;
+};
+
+type MetricThreshold = {
+  operator: "gt" | "lt";
+  value: number;
 };
 
 type WizyrdPayload = {
@@ -629,6 +634,26 @@ const parseReturnRequest = (normalized: string) => {
     };
   }
 
+  const yearMatch = normalized.match(/\b(19|20)\d{2}\b/);
+  if (
+    yearMatch &&
+    (normalized.includes("return") ||
+      normalized.includes("returns") ||
+      normalized.includes("returned") ||
+      normalized.includes("performance"))
+  ) {
+    const year = Number(yearMatch[0]);
+    if (Number.isFinite(year)) {
+      return {
+        horizonYears: null,
+        annualized: false,
+        period: "year" as const,
+        month: null,
+        year
+      };
+    }
+  }
+
   const mtd =
     normalized.includes("mtd") || normalized.includes("month to date");
   const qtd =
@@ -686,6 +711,77 @@ const parseReturnRequest = (normalized: string) => {
     period: null,
     month: null,
     year: null
+  };
+};
+
+const parseMetricThreshold = (
+  normalized: string,
+  metric: MetricKey | null
+): MetricThreshold | null => {
+  if (!metric) {
+    return null;
+  }
+
+  if (metric === "marketCap") {
+    const capGtMatch = normalized.match(
+      /\b(?:greater than|over|above|more than|at least|>=|>)\s*(\d{1,4}(?:\.\d+)?)\s*(t|b|m|trillion|billion|million|tn|bn|mm)?\b/
+    );
+    const capLtMatch = normalized.match(
+      /\b(?:less than|under|below|at most|<=|<)\s*(\d{1,4}(?:\.\d+)?)\s*(t|b|m|trillion|billion|million|tn|bn|mm)?\b/
+    );
+    const match = capGtMatch ?? capLtMatch;
+    if (!match) {
+      return null;
+    }
+    const raw = Number(match[1]);
+    if (!Number.isFinite(raw)) {
+      return null;
+    }
+    const unit = (match[2] ?? "").toLowerCase();
+    let multiplier = 1;
+    if (unit.startsWith("t")) {
+      multiplier = 1e12;
+    } else if (unit.startsWith("b")) {
+      multiplier = 1e9;
+    } else if (unit.startsWith("m")) {
+      multiplier = 1e6;
+    } else if (raw <= 1000) {
+      multiplier = 1e9;
+    }
+    return {
+      operator: capGtMatch ? "gt" : "lt",
+      value: raw * multiplier
+    };
+  }
+
+  const gtMatch = normalized.match(
+    /\b(?:greater than|over|above|more than|at least|>=|>)\s*(\d{1,4}(?:\.\d+)?)\b/
+  );
+  const ltMatch = normalized.match(
+    /\b(?:less than|under|below|at most|<=|<)\s*(\d{1,4}(?:\.\d+)?)\b/
+  );
+  const match = gtMatch ?? ltMatch;
+  if (!match) {
+    return null;
+  }
+  const raw = Number(match[1]);
+  if (!Number.isFinite(raw)) {
+    return null;
+  }
+
+  const isPercentMetric =
+    metric === "return" || metric === "volatility" || metric === "alpha";
+  const hasPercentWord =
+    normalized.includes("percent") || normalized.includes("pct");
+  const value = isPercentMetric
+    ? raw > 1 || hasPercentWord
+      ? raw / 100
+      : raw
+    : raw;
+
+  return {
+    operator: gtMatch ? "gt" : "lt",
+    value
   };
 };
 
@@ -1719,6 +1815,9 @@ const resolveReturnLabel = (request: ReturnRequest, normalized: string) => {
   if (request.period === "ytd") {
     return "YTD return";
   }
+  if (request.period === "year" && request.year) {
+    return `${request.year} return`;
+  }
   const years = request.horizonYears;
   if (years && years > 1) {
     return `${years}Y ${request.annualized ? "annualized " : ""}return`;
@@ -1811,6 +1910,9 @@ const resolveMetricValue = (
       }
       return computePeriodReturn(metrics, latest.year, 0, latest.month);
     }
+    if (returnRequest.period === "year" && returnRequest.year) {
+      return computePeriodReturn(metrics, returnRequest.year, 0, 11);
+    }
     const horizonYears = returnRequest.horizonYears ?? 1;
     if (horizonYears <= 1) {
       return (
@@ -1882,6 +1984,30 @@ const formatMetricValue = (
     return formatNumber(value, 2);
   }
   if (metric === "volatility" || metric === "return") {
+    return formatPercent(value);
+  }
+  return formatNumber(value, 2);
+};
+
+const formatThresholdValue = (
+  metric: MetricKey,
+  value: number | null,
+  _returnRequest: ReturnRequest,
+  _normalized: string
+) => {
+  if (value === null || !Number.isFinite(value)) {
+    return null;
+  }
+  if (metric === "marketCap") {
+    return formatMarketCap(value);
+  }
+  if (metric === "pe") {
+    return formatNumber(value, 1);
+  }
+  if (metric === "beta" || metric === "sharpe") {
+    return formatNumber(value, 2);
+  }
+  if (metric === "alpha" || metric === "volatility" || metric === "return") {
     return formatPercent(value);
   }
   return formatNumber(value, 2);
@@ -2440,6 +2566,7 @@ export async function POST(request: Request) {
     !baseReturnRequest.period
       ? { ...baseReturnRequest, horizonYears: 1 }
       : baseReturnRequest;
+  const metricThreshold = parseMetricThreshold(normalized, metric);
   const direction = detectDirection(normalized, metric);
   const listIntent = isListIntent(normalized);
   const wantsAppHelp = promptTokens.some((token) =>
@@ -3170,7 +3297,7 @@ export async function POST(request: Request) {
     });
   }
 
-  if (!sector && subsectorQuery && listIntent) {
+  if (!sector && subsectorQuery && listIntent && !metric) {
     const normalizedSubsector = normalizeText(subsectorQuery);
     const subsectorTokens = normalizedSubsector.split(" ").filter(Boolean);
     const subsectorMatches = list
@@ -3294,6 +3421,14 @@ export async function POST(request: Request) {
     if (value === null || !Number.isFinite(value)) {
       return;
     }
+    if (metricThreshold) {
+      if (metricThreshold.operator === "gt" && value < metricThreshold.value) {
+        return;
+      }
+      if (metricThreshold.operator === "lt" && value > metricThreshold.value) {
+        return;
+      }
+    }
     const detail = buildMetricDetail(metric, metrics, value, returnRequest, normalized);
     scored.push({ member, value, detail });
   });
@@ -3312,10 +3447,23 @@ export async function POST(request: Request) {
     detail
   }));
 
-  const descriptor = describeMetric(metric, direction, returnRequest, normalized);
-  const parts = [descriptor, sector].filter(Boolean).join(" ");
+  const thresholdLabel = metricThreshold
+    ? formatThresholdValue(metric, metricThreshold.value, returnRequest, normalized)
+    : null;
+  const thresholdPhrase =
+    metricThreshold && thresholdLabel
+      ? `${metricThreshold.operator === "gt" ? "above" : "below"} ${thresholdLabel}`
+      : null;
+  const metricLabel = metricThreshold
+    ? metric === "return"
+      ? resolveReturnLabel(returnRequest, normalized)
+      : resolveMetricLabel(metric, normalized, returnRequest)
+    : describeMetric(metric, direction, returnRequest, normalized);
+  const sectorLabel = sector ? `${sector} ` : "";
   const reply = suggestions.length
-    ? `Here are ${suggestions.length} ${parts ? `${parts} ` : ""}stocks to explore.`
+    ? metricThreshold && thresholdPhrase
+      ? `Here are ${suggestions.length} ${sectorLabel}stocks with ${metricLabel} ${thresholdPhrase} to explore.`
+      : `Here are ${suggestions.length} ${sectorLabel}${metricLabel ? `${metricLabel} ` : ""}stocks to explore.`
     : "I could not find any matches with cached data yet. Try a broader request.";
 
   return respond({

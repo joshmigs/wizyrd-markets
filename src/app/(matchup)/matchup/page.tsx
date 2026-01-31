@@ -8,7 +8,7 @@ import TeamLogo from "@/app/components/TeamLogo";
 import TickerNewsButton from "@/app/components/TickerNewsButton";
 import CompanyLogo from "@/app/components/CompanyLogo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { getEtDayEnd, getEtDayStart } from "@/lib/time";
+import { getEtDayEnd } from "@/lib/time";
 
 type League = {
   id: string;
@@ -78,13 +78,6 @@ type MatchupResponse = {
   error?: string;
 };
 
-type MatchupListItem = {
-  matchup: Matchup;
-  week: Week | null;
-  homeProfile?: Profile | null;
-  awayProfile?: Profile | null;
-};
-
 type UniverseEntry = {
   ticker: string;
   company_name: string | null;
@@ -92,7 +85,6 @@ type UniverseEntry = {
   industry?: string | null;
 };
 
-type MatchupView = "all" | "live" | "history";
 
 const LIVE_REFRESH_MS = 60000;
 
@@ -187,21 +179,6 @@ function formatAsOf(value: string | null | undefined) {
   });
 }
 
-function formatWeekRange(week: Week | null) {
-  if (!week) {
-    return "TBD";
-  }
-  const start = new Date(week.week_start).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric"
-  });
-  const end = new Date(week.week_end).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric"
-  });
-  return `${start} - ${end}`;
-}
-
 export default function MatchupPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
@@ -210,14 +187,9 @@ export default function MatchupPage() {
   const [weeks, setWeeks] = useState<Week[]>([]);
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
   const [matchupData, setMatchupData] = useState<MatchupResponse | null>(null);
-  const [matchupList, setMatchupList] = useState<MatchupListItem[]>([]);
-  const [loadingList, setLoadingList] = useState(false);
   const [loadingMatchup, setLoadingMatchup] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [matchupView, setMatchupView] = useState<MatchupView>("all");
   const [universeMap, setUniverseMap] = useState<Record<string, UniverseEntry>>({});
-  const lastListKeyRef = useRef<string | null>(null);
-  const lastListFetchRef = useRef<number>(0);
   const lastMatchupKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -279,39 +251,6 @@ export default function MatchupPage() {
     loadLeagues();
   }, [session, selectedLeagueId]);
 
-  const loadMatchupList = useCallback(async (force = false) => {
-    if (!session?.access_token || !selectedLeagueId) {
-      setMatchupList([]);
-      lastListKeyRef.current = null;
-      return;
-    }
-
-    const listKey = `${selectedLeagueId}`;
-    const now = Date.now();
-    if (!force && lastListKeyRef.current === listKey && now - lastListFetchRef.current < 1500) {
-      return;
-    }
-    lastListKeyRef.current = listKey;
-    lastListFetchRef.current = now;
-
-    setLoadingList(true);
-    const response = await fetch(`/api/matchup/list?leagueId=${selectedLeagueId}`, {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`
-      }
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      setLoadingList(false);
-      return;
-    }
-    setMatchupList((result.matchups ?? []) as MatchupListItem[]);
-    setLoadingList(false);
-  }, [session?.access_token, selectedLeagueId]);
-
-  useEffect(() => {
-    loadMatchupList();
-  }, [loadMatchupList]);
 
   const loadMatchup = useCallback(async (force = false) => {
     if (!session?.access_token || !selectedLeagueId) {
@@ -351,32 +290,14 @@ export default function MatchupPage() {
         lastMatchupKeyRef.current = resolvedKey;
         setSelectedWeekId(result.week.id);
       }
-      void loadMatchupList(true);
     } finally {
       setLoadingMatchup(false);
     }
-  }, [session?.access_token, selectedLeagueId, selectedWeekId, loadMatchupList]);
+  }, [session?.access_token, selectedLeagueId, selectedWeekId]);
 
   useEffect(() => {
     loadMatchup();
   }, [loadMatchup]);
-
-  useEffect(() => {
-    const resolveView = () => {
-      const hash = window.location.hash;
-      if (hash === "#matchup-live") {
-        setMatchupView("live");
-      } else if (hash === "#matchup-history") {
-        setMatchupView("history");
-      } else {
-        setMatchupView("all");
-      }
-    };
-
-    resolveView();
-    window.addEventListener("hashchange", resolveView);
-    return () => window.removeEventListener("hashchange", resolveView);
-  }, []);
 
   useEffect(() => {
     if (!session?.access_token || !selectedLeagueId) {
@@ -575,11 +496,10 @@ export default function MatchupPage() {
           </div>
         </section>
 
-        {matchupView !== "history" ? (
-          <section
-            id="matchup-live"
-            className="rounded-2xl border border-amber-100 bg-paper p-6"
-          >
+        <section
+          id="matchup-live"
+          className="rounded-2xl border border-amber-100 bg-paper p-6"
+        >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-2xl text-ink">Live matchup</h2>
               <div className="flex items-center gap-3">
@@ -852,76 +772,7 @@ export default function MatchupPage() {
                 time.
               </div>
             )}
-          </section>
-        ) : null}
-
-        {matchupView !== "live" ? (
-          <section
-            id="matchup-history"
-            className="rounded-2xl border border-amber-100 bg-paper p-6"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-display text-2xl text-ink">Your matchups</h2>
-            </div>
-            {loadingList ? (
-              <p className="mt-4 text-sm text-steel">Loading matchups...</p>
-            ) : matchupList.length === 0 ? (
-              <p className="mt-4 text-sm text-steel">
-                No matchups yet. Once the schedule is generated, they will appear here.
-              </p>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {matchupList.map((item) => {
-                  const weekRange = formatWeekRange(item.week);
-                  const isSelected = item.week?.id === selectedWeekId;
-                  const isHome = item.matchup.home_user_id === session?.user?.id;
-                  const opponent = isHome ? item.awayProfile : item.homeProfile;
-                  const now = Date.now();
-                  const start = item.week ? getEtDayStart(item.week.week_start) : null;
-                  const end = item.week ? getEtDayEnd(item.week.week_end) : null;
-                  const status =
-                    start !== null && end !== null
-                      ? now < start
-                        ? "Upcoming"
-                        : now > end
-                          ? "Final"
-                          : "Live"
-                      : "TBD";
-                  return (
-                    <button
-                      key={item.matchup.id}
-                      type="button"
-                      onClick={() => setSelectedWeekId(item.week?.id ?? null)}
-                      className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 text-left text-sm transition md:flex-row md:items-center md:justify-between ${
-                        isSelected
-                          ? "border-navy bg-white shadow-sm shadow-navy/10"
-                          : "border-amber-100 bg-white hover:border-navy/40"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <TeamLogo src={opponent?.team_logo_url} size={44} />
-                        <div>
-                          <p className="font-semibold text-ink">
-                            {opponent?.display_name ?? "Opponent"}
-                          </p>
-                          <p className="text-xs text-steel">
-                            {isHome ? "Home" : "Away"} • {weekRange}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-steel">
-                        <span>{status}</span>
-                        <span className="rounded-full border border-navy/20 px-3 py-1 text-navy">
-                          View
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        ) : null}
+        </section>
       </div>
     </main>
   );

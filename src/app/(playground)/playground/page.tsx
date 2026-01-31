@@ -31,6 +31,7 @@ type StockMetrics = {
   ticker: string;
   name: string | null;
   description: string | null;
+  website?: string | null;
   marketCap: string | null;
   pe: string | null;
   beta: number | null;
@@ -156,6 +157,20 @@ const formatAsOf = (value?: string | null) => {
     day: "numeric",
     year: "numeric"
   });
+};
+
+const normalizeWebsite = (value?: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 };
 
 const CHART_WIDTH = 420;
@@ -444,10 +459,12 @@ function PlaygroundPageInner() {
   const snapshotScrollTopRef = useRef(0);
   const monthlyScrollTopRef = useRef(0);
   const screenerScrollTopRef = useRef(0);
+  const manualSnapshotRef = useRef(false);
   const [metricsByTicker, setMetricsByTicker] = useState<Record<string, StockMetrics>>({});
   const [metricsErrorsByTicker, setMetricsErrorsByTicker] = useState<
     Record<string, string>
   >({});
+  const [websiteByTicker, setWebsiteByTicker] = useState<Record<string, string | null>>({});
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [screenerFocus, setScreenerFocus] = useState(false);
   const [screenerTicker, setScreenerTicker] = useState("");
@@ -570,6 +587,12 @@ function PlaygroundPageInner() {
     }
     const normalized = rawTicker.replace(/[^a-zA-Z0-9.]/g, "").toUpperCase();
     if (!normalized) {
+      return;
+    }
+    if (lastDeepLinkRef.current !== normalized) {
+      manualSnapshotRef.current = false;
+    }
+    if (manualSnapshotRef.current) {
       return;
     }
     const match = universe.find((stock) => stock.ticker === normalized);
@@ -915,6 +938,50 @@ function PlaygroundPageInner() {
   const activeMetrics = activeTicker ? metricsByTicker[activeTicker] : null;
   const activeError = activeTicker ? metricsErrorsByTicker[activeTicker] : null;
   const monthlyMetrics = monthlyTicker ? metricsByTicker[monthlyTicker] : null;
+  useEffect(() => {
+    const loadWebsite = async (ticker: string) => {
+      try {
+        const response = await fetch(
+          `/api/company/website?ticker=${encodeURIComponent(ticker)}`
+        );
+        const result = await response.json().catch(() => ({}));
+        const website =
+          typeof result.website === "string" && result.website.trim()
+            ? result.website.trim()
+            : null;
+        setWebsiteByTicker((current) => {
+          if (current[ticker] !== undefined) {
+            return current;
+          }
+          return { ...current, [ticker]: website };
+        });
+      } catch {
+        setWebsiteByTicker((current) => {
+          if (current[ticker] !== undefined) {
+            return current;
+          }
+          return { ...current, [ticker]: null };
+        });
+      }
+    };
+
+    const targets = [activeTicker, monthlyTicker].filter(Boolean) as string[];
+    targets.forEach((ticker) => {
+      if (websiteByTicker[ticker] !== undefined) {
+        return;
+      }
+      void loadWebsite(ticker);
+    });
+  }, [activeTicker, monthlyTicker, websiteByTicker]);
+
+  const activeWebsite = useMemo(
+    () => normalizeWebsite(websiteByTicker[activeTicker] ?? null),
+    [activeTicker, websiteByTicker]
+  );
+  const monthlyWebsite = useMemo(
+    () => normalizeWebsite(websiteByTicker[monthlyTicker] ?? null),
+    [monthlyTicker, websiteByTicker]
+  );
   const activeInWatchlist = activeTicker
     ? watchlist.some((item) => item.ticker === activeTicker)
     : false;
@@ -1174,6 +1241,7 @@ function PlaygroundPageInner() {
   };
 
   const handleSelectSnapshot = (option: UniverseMember) => {
+    manualSnapshotRef.current = true;
     setActiveTicker(option.ticker);
     setSnapshotQuery(`${option.ticker} · ${option.company_name ?? ""}`.trim());
   };
@@ -1921,12 +1989,20 @@ function PlaygroundPageInner() {
             className="relative rounded-2xl border border-amber-100 bg-paper p-6 pr-24 sm:pr-32 lg:pr-40"
           >
           {monthlyTicker ? (
-            <a
-              href={`?view=snapshot&ticker=${encodeURIComponent(monthlyTicker)}#company-snapshot`}
-              className="absolute right-6 top-6 inline-flex"
-            >
-              <CompanyLogo ticker={monthlyTicker} size={104} />
-            </a>
+            monthlyWebsite ? (
+              <a
+                href={monthlyWebsite}
+                className="absolute right-6 top-6 inline-flex"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <CompanyLogo ticker={monthlyTicker} size={104} />
+              </a>
+            ) : (
+              <div className="absolute right-6 top-6 inline-flex">
+                <CompanyLogo ticker={monthlyTicker} size={104} />
+              </div>
+            )
           ) : null}
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -2840,12 +2916,20 @@ function PlaygroundPageInner() {
             </div>
             {activeStock?.ticker ? (
               <div className="flex flex-col items-end gap-2">
-                <a
-                  href={`?view=snapshot&ticker=${encodeURIComponent(activeStock.ticker)}#company-snapshot`}
-                  className="inline-flex"
-                >
-                  <CompanyLogo ticker={activeStock.ticker} size={104} />
-                </a>
+                {activeWebsite ? (
+                  <a
+                    href={activeWebsite}
+                    className="inline-flex"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <CompanyLogo ticker={activeStock.ticker} size={104} />
+                  </a>
+                ) : (
+                  <div className="inline-flex">
+                    <CompanyLogo ticker={activeStock.ticker} size={104} />
+                  </div>
+                )}
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
@@ -2903,6 +2987,7 @@ function PlaygroundPageInner() {
               placeholder="Search a ticker or company"
               value={snapshotQuery}
               onChange={(event) => {
+                manualSnapshotRef.current = true;
                 setSnapshotQuery(event.target.value);
                 snapshotScrollTopRef.current = 0;
                 setActiveTicker("");

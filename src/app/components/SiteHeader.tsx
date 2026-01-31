@@ -38,15 +38,9 @@ const PLAYGROUND_ITEMS = [
   { href: "/playground?view=screener#stock-screener", label: "Stock screener" }
 ];
 
-const MATCHUP_ITEMS = [
-  { href: "/matchup#matchup-live", label: "Live matchup" },
-  { href: "/matchup#matchup-history", label: "Past matchups" }
-];
+const MATCHUP_ITEMS = [{ href: "/matchup#matchup-live", label: "Live matchup" }];
 
-const LINEUP_ITEMS = [
-  { href: "/lineup#lineup-live", label: "Live lineup" },
-  { href: "/lineup#lineup-history", label: "Past lineups" }
-];
+const LINEUP_ITEMS = [{ href: "/lineup#lineup-live", label: "Live lineup" }];
 
 export default function SiteHeader() {
   const pathname = usePathname();

@@ -16,6 +16,7 @@ type StockMetrics = {
   ticker: string;
   name: string | null;
   description: string | null;
+  website?: string | null;
   marketCap: string | null;
   pe: string | null;
   beta: number | null;
@@ -625,6 +626,7 @@ const mergeOverviewFields = (metrics: StockMetrics, fallback?: StockMetrics | nu
     version: metrics.version ?? DATA_VERSION,
     name: metrics.name ?? fallback.name ?? null,
     description: metrics.description ?? fallback.description ?? null,
+    website: metrics.website ?? null,
     marketCap: metrics.marketCap ?? fallback.marketCap ?? null,
     pe: metrics.pe ?? fallback.pe ?? null,
     beta: metrics.beta ?? fallback.beta ?? null,
@@ -724,6 +726,7 @@ const getStockMetrics = async (
     ticker,
     name: overview?.Name ?? null,
     description: overview?.Description ?? null,
+    website: null,
     marketCap: formatMarketCap(overview?.MarketCapitalization ?? null) ?? derivedMarketCap,
     pe: overview?.PERatio ?? derivedPe ?? null,
     beta: overview?.Beta ? Number(overview.Beta) : derivedBeta,
