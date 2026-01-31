@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { getAssetName } from "@/lib/assets";
 
 const ALPHA_VANTAGE_BASE = "https://www.alphavantage.co/query";
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
-const YAHOO_PROFILE_ENDPOINT =
-  "https://query1.finance.yahoo.com/v10/finance/quoteSummary";
+const WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php";
 const WEBSITE_TTL_MS = 1000 * 60 * 60 * 24;
+const NULL_TTL_MS = 1000 * 60 * 10;
 
 const globalCache = globalThis as typeof globalThis & {
   websiteCache?: Map<string, { website: string | null; updatedAt: number }>;
@@ -52,12 +54,45 @@ const fetchWebsiteFromWikidata = async (ticker: string) => {
   return normalizeWebsite(value);
 };
 
-const fetchWebsiteFromYahoo = async (ticker: string) => {
-  const url = new URL(`${YAHOO_PROFILE_ENDPOINT}/${ticker}`);
-  url.searchParams.set("modules", "assetProfile");
+const fetchCompanyName = async (ticker: string) => {
+  let supabase: ReturnType<typeof createSupabaseServiceClient> | null = null;
+  try {
+    supabase = createSupabaseServiceClient();
+  } catch {
+    return normalizeWebsite(getAssetName(ticker)) ? getAssetName(ticker) : null;
+  }
+
+  const { data: snapshot } = await supabase
+    .from("asset_universe_snapshots")
+    .select("id")
+    .order("as_of", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!snapshot?.id) {
+    return getAssetName(ticker) || null;
+  }
+
+  const { data } = await supabase
+    .from("asset_universe_members")
+    .select("company_name")
+    .eq("snapshot_id", snapshot.id)
+    .eq("ticker", ticker)
+    .maybeSingle();
+
+  return data?.company_name ?? getAssetName(ticker) ?? null;
+};
+
+const fetchWikipediaTitle = async (query: string) => {
+  const url = new URL(WIKIPEDIA_API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("list", "search");
+  url.searchParams.set("srsearch", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
   const response = await fetch(url.toString(), {
     headers: {
-      accept: "application/json,text/plain,*/*",
+      accept: "application/json",
       "user-agent": USER_AGENT
     },
     cache: "no-store"
@@ -66,11 +101,62 @@ const fetchWebsiteFromYahoo = async (ticker: string) => {
     return null;
   }
   const data = (await response.json()) as {
-    quoteSummary?: {
-      result?: Array<{ assetProfile?: { website?: string } }>;
+    query?: { search?: Array<{ title?: string }> };
+  };
+  const title = data?.query?.search?.[0]?.title;
+  return title ?? null;
+};
+
+const fetchWikidataQid = async (title: string) => {
+  const url = new URL(WIKIPEDIA_API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("prop", "pageprops");
+  url.searchParams.set("titles", title);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+  const response = await fetch(url.toString(), {
+    headers: {
+      accept: "application/json",
+      "user-agent": USER_AGENT
+    },
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as {
+    query?: {
+      pages?: Record<string, { pageprops?: { wikibase_item?: string } }>;
     };
   };
-  const value = data?.quoteSummary?.result?.[0]?.assetProfile?.website;
+  const pages = data?.query?.pages ?? {};
+  const first = Object.values(pages)[0];
+  return first?.pageprops?.wikibase_item ?? null;
+};
+
+const fetchWebsiteFromWikidataQid = async (qid: string) => {
+  const query = `
+    SELECT ?website WHERE {
+      wd:${qid} wdt:P856 ?website .
+    }
+    LIMIT 1
+  `;
+  const url = new URL(WIKIDATA_ENDPOINT);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("query", query);
+  const response = await fetch(url.toString(), {
+    headers: {
+      accept: "application/sparql-results+json",
+      "user-agent": USER_AGENT
+    }
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as {
+    results?: { bindings?: Array<{ website?: { value?: string } }> };
+  };
+  const value = data?.results?.bindings?.[0]?.website?.value;
   return normalizeWebsite(value);
 };
 
@@ -83,8 +169,11 @@ export async function GET(request: Request) {
   }
 
   const cached = websiteCache.get(ticker);
-  if (cached && Date.now() - cached.updatedAt < WEBSITE_TTL_MS) {
-    return NextResponse.json({ ticker, website: cached.website });
+  if (cached) {
+    const ttl = cached.website ? WEBSITE_TTL_MS : NULL_TTL_MS;
+    if (Date.now() - cached.updatedAt < ttl) {
+      return NextResponse.json({ ticker, website: cached.website });
+    }
   }
 
   let website: string | null = null;
@@ -118,7 +207,19 @@ export async function GET(request: Request) {
 
   if (!website) {
     try {
-      website = await fetchWebsiteFromYahoo(ticker);
+      const companyName = await fetchCompanyName(ticker);
+      if (companyName) {
+        const title =
+          (await fetchWikipediaTitle(companyName)) ??
+          (await fetchWikipediaTitle(`${companyName} company`)) ??
+          (await fetchWikipediaTitle(`${companyName} ticker ${ticker}`));
+        if (title) {
+          const qid = await fetchWikidataQid(title);
+          if (qid) {
+            website = await fetchWebsiteFromWikidataQid(qid);
+          }
+        }
+      }
     } catch {
       website = null;
     }
