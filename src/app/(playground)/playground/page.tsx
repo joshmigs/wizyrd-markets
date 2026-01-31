@@ -974,14 +974,46 @@ function PlaygroundPageInner() {
     });
   }, [activeTicker, monthlyTicker, websiteByTicker]);
 
-  const activeWebsite = useMemo(
-    () => normalizeWebsite(websiteByTicker[activeTicker] ?? null),
-    [activeTicker, websiteByTicker]
-  );
-  const monthlyWebsite = useMemo(
-    () => normalizeWebsite(websiteByTicker[monthlyTicker] ?? null),
-    [monthlyTicker, websiteByTicker]
-  );
+  const resolveWebsiteForTicker = async (ticker: string, force = false) => {
+    if (!ticker) {
+      return null;
+    }
+    const existing = websiteByTicker[ticker];
+    if (!force && existing !== undefined) {
+      return normalizeWebsite(existing ?? null);
+    }
+    try {
+      const response = await fetch(
+        `/api/company/website?ticker=${encodeURIComponent(ticker)}`
+      );
+      const result = await response.json().catch(() => ({}));
+      const website =
+        typeof result.website === "string" && result.website.trim()
+          ? result.website.trim()
+          : null;
+      setWebsiteByTicker((current) => ({ ...current, [ticker]: website }));
+      return normalizeWebsite(website);
+    } catch {
+      setWebsiteByTicker((current) => {
+        if (current[ticker] !== undefined) {
+          return current;
+        }
+        return { ...current, [ticker]: null };
+      });
+      return null;
+    }
+  };
+
+  const handleLogoClick = async (ticker: string) => {
+    if (!ticker) {
+      return;
+    }
+    const url = await resolveWebsiteForTicker(ticker, true);
+    if (!url || typeof window === "undefined") {
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
   const activeInWatchlist = activeTicker
     ? watchlist.some((item) => item.ticker === activeTicker)
     : false;
@@ -1989,20 +2021,14 @@ function PlaygroundPageInner() {
             className="relative rounded-2xl border border-amber-100 bg-paper p-6 pr-24 sm:pr-32 lg:pr-40"
           >
           {monthlyTicker ? (
-            monthlyWebsite ? (
-              <a
-                href={monthlyWebsite}
-                className="absolute right-6 top-6 inline-flex"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <CompanyLogo ticker={monthlyTicker} size={104} />
-              </a>
-            ) : (
-              <div className="absolute right-6 top-6 inline-flex">
-                <CompanyLogo ticker={monthlyTicker} size={104} />
-              </div>
-            )
+            <button
+              type="button"
+              onClick={() => void handleLogoClick(monthlyTicker)}
+              className="absolute right-6 top-6 inline-flex cursor-pointer"
+              aria-label="Open company website"
+            >
+              <CompanyLogo ticker={monthlyTicker} size={104} />
+            </button>
           ) : null}
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -2916,20 +2942,14 @@ function PlaygroundPageInner() {
             </div>
             {activeStock?.ticker ? (
               <div className="flex flex-col items-end gap-2">
-                {activeWebsite ? (
-                  <a
-                    href={activeWebsite}
-                    className="inline-flex"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <CompanyLogo ticker={activeStock.ticker} size={104} />
-                  </a>
-                ) : (
-                  <div className="inline-flex">
-                    <CompanyLogo ticker={activeStock.ticker} size={104} />
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => void handleLogoClick(activeStock.ticker)}
+                  className="inline-flex cursor-pointer"
+                  aria-label="Open company website"
+                >
+                  <CompanyLogo ticker={activeStock.ticker} size={104} />
+                </button>
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
                     type="button"

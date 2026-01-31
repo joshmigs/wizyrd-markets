@@ -64,7 +64,7 @@ const buildId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const TICKER_REGEX = /\b[A-Z]{2,5}(?:\.[A-Z]{1,2})?\b/g;
 
 const buildTickerHref = (ticker: string) =>
-  `/playground?view=snapshot&ticker=${encodeURIComponent(ticker)}#company-snapshot`;
+  `/playground?ticker=${encodeURIComponent(ticker)}#company-snapshot`;
 
 const linkifyContent = (
   content: string,
