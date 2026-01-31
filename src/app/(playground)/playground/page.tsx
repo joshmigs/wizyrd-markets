@@ -1013,17 +1013,8 @@ function PlaygroundPageInner() {
       window.open(existing, "_blank", "noopener,noreferrer");
       return;
     }
-    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
-    if (!popup) {
-      return;
-    }
-    void resolveWebsiteForTicker(ticker, true).then((url) => {
-      if (url) {
-        popup.location.href = url;
-      } else {
-        popup.close();
-      }
-    });
+    const redirectUrl = `/company-redirect?ticker=${encodeURIComponent(ticker)}`;
+    window.open(redirectUrl, "_blank", "noopener,noreferrer");
   };
   const activeInWatchlist = activeTicker
     ? watchlist.some((item) => item.ticker === activeTicker)
